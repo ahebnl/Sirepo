@@ -495,18 +495,16 @@ SIREPO.app.factory('plotting', function(appState, frameCache, panelState, utilit
         initImage: function(plotRange, heatmap, cacheCanvas, imageData, modelName) {
             var scaleFunction = this.scaleFunction(modelName);
             if (scaleFunction) {
-                plotRange = {
-                    min: scaleFunction(plotRange.min),
-                    max: scaleFunction(plotRange.max),
-                };
-                if (scaleFunction.hasOwnProperty('powerName') && ["e", "10", "2"].indexOf(scaleFunction.powerName) >= 0) {
-                    console.log("chaning min from ", plotRange.min);
+                if (["e", "10", "2"].indexOf(scaleFunction.powerName) >= 0) {
                     plotRange.min = d3.min(heatmap, function(row) {
                         return d3.min(row, function(x) {
                             return x <= 0 ? Infinity : x;});
                     });
-                    console.log("new min=", plotRange.min);
                 }
+                plotRange = {
+                    min: scaleFunction(plotRange.min),
+                    max: scaleFunction(plotRange.max),
+                };
             }
             var colorScale = this.colorScaleForPlot(plotRange, modelName);
             var xSize = heatmap[0].length;
@@ -730,11 +728,15 @@ SIREPO.app.factory('plotting', function(appState, frameCache, panelState, utilit
                 }
                 if (d[1] > 0 && d[1] < min_nonzero) { min_nonzero = d[1]; }
             }
-
+            if (appState.models[modelName].useIntensityLimits == '1') {
+                var m = appState.models[modelName];
+                ydom = [
+                    m.minIntensityLimit,
+                    m.maxIntensityLimit,
+                ];
+            }
             if (ydom) {
-                // console.log("name", scaleFunction.powerName);
-                if (ydom[0] <= 0 && scaleFunction && scaleFunction.hasOwnProperty("powerName")
-                    && ["e", "2", "10"].indexOf(scaleFunction.powerName) >= 0) {
+                if (scaleFunction && ydom[0] <= 0 && ['e', '2', '10'].indexOf(scaleFunction.powerName) >= 0) {
                     ydom[0] = min_nonzero;
                 }
 
