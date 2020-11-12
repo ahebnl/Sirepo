@@ -937,18 +937,19 @@ SIREPO.beamlineItemLogic('crlView', function(appState, panelState, srwService, $
 SIREPO.beamlineItemLogic('crystalView', function(appState, panelState, srwService, $scope) {
 
     function computeCrystalInit(item) {
-        if (item.material != 'Unknown') {
-            panelState.enableFields(item.type, [
+        panelState.enableFields(item.type, [
                 [
                     'dSpacing', 'psi0r', 'psi0i', 'psiHr',
                     'psiHi', 'psiHBr', 'psiHBi',
-                ], false,
+                ], item.material == 'Unknown',
             ]);
+        if (item.material != 'Unknown') {
             srwService.computeFields('compute_crystal_init', item, [
                 'dSpacing', 'psi0r', 'psi0i', 'psiHr', 'psiHi',
                 'psiHBr', 'psiHBi', 'orientation',
             ]);
         }
+
     }
 
     function computeCrystalOrientation(item) {
