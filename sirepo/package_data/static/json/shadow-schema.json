@@ -26,6 +26,17 @@
             ["4", "Value at zero"],
             ["5", "User value"]
         ],
+        "BeamStatisticsParameter": [
+            ["none", "None"],
+            ["sigmax", "sigmax"],
+            ["sigdix", "sigdix"],
+            ["sigmaz", "sigmaz"],
+            ["sigdiz", "sigdiz"],
+            ["x", "x"],
+            ["xp", "xp"],
+            ["z", "z"],
+            ["zp", "zp"]
+        ],
         "BendingMagnetMode": [
             ["4", "Synchrotron"],
             ["6", "Exact Synchrotron"]
@@ -308,9 +319,9 @@
             ["1", "User Defined"]
         ],
         "TorusPoleLocation": [
- 	    ["0", "Lower/Outer (Concave/Concave)"],
-	    ["1", "Lower/Inner (Concave/Convex)"],
-	    ["2", "Upper/Inner (Convex/Concave)"],
+            ["0", "Lower/Outer (Concave/Concave)"],
+            ["1", "Lower/Inner (Concave/Convex)"],
+            ["2", "Upper/Inner (Convex/Concave)"],
             ["3", "Upper/Outer (Convex/Convex)"]
         ],
         "UndulatorRadiationSize": [
@@ -351,6 +362,20 @@
         }
     },
     "model": {
+        "_INTENSITY_REPORT": {
+            "x": ["Value to Plot", "ColumnValue", "1"],
+            "y": ["Value to Plot", "ColumnValue", "3"],
+            "weight": ["Weight", "ColumnWeight", "22"],
+            "histogramBins": ["Number of Bins", "Integer", 100],
+            "overrideSize": ["Override Plot Size", "Boolean", "0"],
+            "horizontalSize": ["Horizontal Size [mm]", "Float", 10],
+            "verticalSize": ["Vertical Size [mm]", "Float", 10],
+            "horizontalOffset": ["Horizontal Offset [mm]", "Float", 0],
+            "verticalOffset": ["Vertical Offset [mm]", "Float", 0],
+            "colorMap": ["Color Map", "ColorMap", "viridis"],
+            "aspectRatio": ["Aspect Ratio", "AspectRatio", "1"],
+            "notes": ["Notes", "Text", ""]
+        },
         "_MISALIGNED_ELEMENT": {
             "offx": ["X Offset [mm]", "Float", 0],
             "offy": ["Y Offset [mm]", "Float", 0],
@@ -367,6 +392,14 @@
             "verticalSize": ["Vertical Size [mm]", "Float", 10],
             "horizontalOffset": ["Horizontal Offset [mm]", "Float", 0],
             "verticalOffset": ["Vertical Offset [mm]", "Float", 0]
+        },
+        "beamStatisticsReport": {
+            "epsilon": ["Epsilon", "Float", 1e-6],
+            "driftDivisions": ["Drift Divisions", "Integer", 100, "", 1, 1000],
+            "y1": ["Value to Plot 1", "BeamStatisticsParameter", "sigmax"],
+            "y2": ["Value to Plot 2", "BeamStatisticsParameter", "sigmaz"],
+            "y3": ["Value to Plot 3", "BeamStatisticsParameter", "none"],
+            "notes": ["Notes", "Text", ""]
         },
         "bendingMagnet": {
             "ph1": ["Minimum Energy [eV]", "Float", 11160.0],
@@ -461,6 +494,34 @@
             "epsi_dz": ["Z Distance From Waist [m]", "Float"],
             "f_pol": ["Polaization Component", "PolarizationComponent", "3"]
         },
+        "emptyElement": {
+            "title": ["Element Name", "String", "Empty Element"],
+            "position": ["Nominal Position [m]", "Float"],
+            "alpha": ["Orientation Angle [deg]", "OrientationAngle", 0]
+        },
+        "geometricSource": {
+            "f_color": ["Photon Energy Distribution", "PhotonEnergyDistribution", "3"],
+            "singleEnergyValue": ["Value [eV]", "Float", 1000],
+            "ph1": ["Minimum Energy [eV]", "Float", 1000],
+            "ph2": ["Maximum Energy [eV]", "Float"],
+            "f_polar": ["Polarization", "Boolean", "1"],
+            "f_coher": ["Coherent Beam", "Boolean", "0"],
+            "pol_angle": ["Phase Difference [deg]", "Float", 0.0],
+            "pol_deg": ["Degree of Polarization [cos(phi)/(cos(phi)+sin(phi))]", "Float", 0.0],
+            "fsour": ["Spatial Type in X-Z Plane", "SpatialType", "3"],
+            "wxsou": ["Width (X) [mm]", "Float", 0.0],
+            "wzsou": ["Height (Z) [mm]", "Float", 0.0],
+            "sigmax": ["Sigma X [µm]", "Float", 0.0],
+            "sigmaz": ["Sigma Z [µm]", "Float", 0.0],
+            "fdistr": ["Angular Distribution", "AngularDistribution", "3"],
+            "sigdix": ["Horizontal Sigma (X) [mrad]", "Float", 0.0],
+            "sigdiz": ["Vertical Sigma (Z) [mrad]", "Float", 0.0],
+            "cone_min": ["Cone Internal Half-Aperture [rad]", "Float", 0.0],
+            "cone_max": ["Cone External Half-Aperture [rad]", "Float", 0.0],
+            "fsource_depth": ["Depth", "SourceDepth", "3"],
+            "wysou": ["Source Depth (y) [mm]", "Float", 0.0],
+            "sigmay": ["Sigma Y [µm]", "Float", 0.0]
+        },
         "grating": {
             "_super": ["_", "model", "_MISALIGNED_ELEMENT"],
             "title": ["Element Name", "String", "Grating"],
@@ -529,35 +590,6 @@
             "hunt_l": ["Monochromator Length [mm]", "Float", 0.0],
             "blaze": ["Blaze Angle [deg]", "Float", 0.0]
         },
-        "sourceDivergence": {
-            "hdiv1": ["Horizontal Divergence +X [mrad]", "Float", 0.0],
-            "hdiv2": ["Horizontal Divergence -X [mrad]", "Float", 0.0],
-            "vdiv1": ["Vertical Divergence +Z [mrad]", "Float", 0.06],
-            "vdiv2": ["Vertical Divergence -Z [mrad]", "Float", 0.06]
-        },
-        "geometricSource": {
-            "f_color": ["Photon Energy Distribution", "PhotonEnergyDistribution", "1"],
-            "singleEnergyValue": ["Value [eV]", "Float", 11160.0],
-            "ph1": ["Minimum Energy [eV]", "Float", 11160.0],
-            "ph2": ["Maximum Energy [eV]", "Float"],
-            "f_polar": ["Polarization", "Boolean", "1"],
-            "f_coher": ["Coherent Beam", "Boolean", "0"],
-            "pol_angle": ["Phase Difference [deg]", "Float", 0.0],
-            "pol_deg": ["Degree of Polarization [cos(phi)/(cos(phi)+sin(phi))]", "Float", 0.0],
-            "fsour": ["Spatial Type in X-Z Plane", "SpatialType", "0"],
-            "wxsou": ["Width (X) [mm]", "Float", 0.0],
-            "wzsou": ["Height (Z) [mm]", "Float", 0.0],
-            "sigmax": ["Sigma X [µm]", "Float", 0.0],
-            "sigmaz": ["Sigma Z [µm]", "Float", 0.0],
-            "fdistr": ["Angular Distribution", "AngularDistribution", "2"],
-            "sigdix": ["Horizontal Sigma (X) [mrad]", "Float", 0.0],
-            "sigdiz": ["Vertical Sigma (Z) [mrad]", "Float", 0.0],
-            "cone_min": ["Cone Internal Half-Aperture [rad]", "Float", 0.0],
-            "cone_max": ["Cone External Half-Aperture [rad]", "Float", 0.0],
-            "fsource_depth": ["Depth", "SourceDepth", "1"],
-            "wysou": ["Source Depth (y) [mm]", "Float", 0.0],
-            "sigmay": ["Sigma Y [µm]", "Float", 0.0]
-        },
         "histogramReport": {
             "distanceFromSource": ["Distance From Source [m]", "Float", 0],
             "column": ["Column", "ColumnValue"],
@@ -566,18 +598,13 @@
             "notes": ["Notes", "Text", ""]
         },
         "initialIntensityReport": {
-            "x": ["Value to Plot", "ColumnValue"],
-            "y": ["Value to Plot", "ColumnValue"],
-            "weight": ["Weight", "ColumnWeight", "22"],
-            "histogramBins": ["Number of Bins", "Integer"],
-            "overrideSize": ["Override Plot Size", "Boolean", "0"],
-            "horizontalSize": ["Horizontal Size [mm]", "Float", 10],
-            "verticalSize": ["Vertical Size [mm]", "Float", 10],
-            "horizontalOffset": ["Horizontal Offset [mm]", "Float", 0],
-            "verticalOffset": ["Vertical Offset [mm]", "Float", 0],
-            "colorMap": ["Color Map", "ColorMap", "viridis"],
-            "aspectRatio": ["Aspect Ratio", "AspectRatio", "1"],
-            "notes": ["Notes", "Text", ""]
+            "_super": ["_", "model", "_INTENSITY_REPORT"]
+        },
+        "lens": {
+            "title": ["Element Name", "String", "Lens"],
+            "position": ["Position along Optical Path [m]", "Float"],
+            "focal_x": ["Horizontal Focal Length [m]", "Float", 3],
+            "focal_z": ["Vertical Focal Length [m]", "Float", 1.0e+23]
         },
         "mirror": {
             "_super": ["_", "model", "_MISALIGNED_ELEMENT"],
@@ -643,19 +670,8 @@
             "verticalOffset": ["Vertical Offset [mm]", "Float", 0]
         },
         "plotXYReport": {
-            "distanceFromSource": ["Distance From Source [m]", "Float", 0],
-            "x": ["Value to Plot", "ColumnValue"],
-            "y": ["Value to Plot", "ColumnValue"],
-            "weight": ["Weight", "ColumnWeight", "22"],
-            "histogramBins": ["Number of Bins", "Integer"],
-            "overrideSize": ["Override Plot Size", "Boolean", "0"],
-            "horizontalSize": ["Horizontal Size [mm]", "Float", 10],
-            "verticalSize": ["Vertical Size [mm]", "Float", 10],
-            "horizontalOffset": ["Horizontal Offset [mm]", "Float", 0],
-            "verticalOffset": ["Vertical Offset [mm]", "Float", 0],
-            "colorMap": ["Color Map", "ColorMap", "viridis"],
-            "aspectRatio": ["Aspect Ratio", "AspectRatio", "1"],
-            "notes": ["Notes", "Text", ""]
+            "_super": ["_", "model", "_INTENSITY_REPORT"],
+            "distanceFromSource": ["Distance From Source [m]", "Float", 0]
         },
         "rayFilter": {
             "f_bound_sour": ["Optimize Source", "BoundSource", "0"],
@@ -666,9 +682,15 @@
             "z2": ["Z Maximum [mm]", "Float", 1e16]
         },
         "simulation": {
-            "sourceType": ["Source Type", "SourceType", "geometricSource"],
+            "sourceType": ["Source Type", "SourceType", "bendingMagnet"],
             "npoint": ["Number of Rays", "Integer", 5000],
             "istar1": ["Seed", "Integer", 567656]
+        },
+        "sourceDivergence": {
+            "hdiv1": ["Horizontal Divergence +X [mrad]", "Float", 0.0],
+            "hdiv2": ["Horizontal Divergence -X [mrad]", "Float", 0.0],
+            "vdiv1": ["Vertical Divergence +Z [mrad]", "Float", 0.06],
+            "vdiv2": ["Vertical Divergence -Z [mrad]", "Float", 0.06]
         },
         "undulator": {
             "k_horizontal": ["Horizontal Deflecting Parameter (K)", "Float", 0.0],
@@ -709,18 +731,7 @@
             "position": ["Nominal Position [m]", "Float"]
         },
         "watchpointReport": {
-            "x": ["Value to Plot", "ColumnValue"],
-            "y": ["Value to Plot", "ColumnValue"],
-            "weight": ["Weight", "ColumnWeight", "22"],
-            "histogramBins": ["Number of Bins", "Integer"],
-            "overrideSize": ["Override Plot Size", "Boolean", "0"],
-            "horizontalSize": ["Horizontal Size [mm]", "Float", 10],
-            "verticalSize": ["Vertical Size [mm]", "Float", 10],
-            "horizontalOffset": ["Horizontal Offset [mm]", "Float", 0],
-            "verticalOffset": ["Vertical Offset [mm]", "Float", 0],
-            "colorMap": ["Color Map", "ColorMap", "viridis"],
-            "aspectRatio": ["Aspect Ratio", "AspectRatio", "1"],
-            "notes": ["Notes", "Text", ""]
+            "_super": ["_", "model", "_INTENSITY_REPORT"]
         },
         "wiggler": {
             "ph1": ["Minimum Energy [eV]", "Float", 20000.0],
@@ -775,6 +786,18 @@
                         "verticalOffset"
                     ]]
                 ]
+            ]
+        },
+        "beamStatisticsReport": {
+            "title": "Beam Statistics",
+            "basic": [],
+            "advanced": [
+                "y1",
+                "y2",
+                "y3",
+                "epsilon",
+                "driftDivisions",
+                "notes"
             ]
         },
         "bendingMagnet": {
@@ -937,6 +960,14 @@
                     "internalOutlineMajorAxis",
                     "internalOutlineMinorAxis"
                 ]]
+            ]
+        },
+        "emptyElement": {
+            "title": "Empty Element",
+            "advanced": [
+                "title",
+                "position",
+                "alpha"
             ]
         },
         "geometricSource": {
@@ -1102,8 +1133,7 @@
                 "notes"
             ]
         },
-        "initialIntensityReport": {
-            "title": "Initial Intensity Report",
+        "_INTENSITY_REPORT": {
             "basic": [],
             "advanced": [
                 [
@@ -1130,6 +1160,20 @@
                 "aspectRatio",
                 "colorMap",
                 "notes"
+            ]
+        },
+        "initialIntensityReport": {
+            "_super": ["_", "view", "_INTENSITY_REPORT"],
+            "title": "Initial Intensity Report"
+        },
+        "lens": {
+            "title": "Lens",
+            "basic": [],
+            "advanced": [
+                "title",
+                "position",
+                "focal_x",
+                "focal_z"
             ]
         },
         "mirror": {
@@ -1224,34 +1268,10 @@
             ]
         },
         "plotXYReport": {
+            "_super": ["_", "view", "_INTENSITY_REPORT"],
             "title": "Plot XY",
-            "basic": [],
             "advanced": [
-                "distanceFromSource",
-                [
-                    ["Horizontal", [
-                     "x"
-                    ]],
-                    ["Vertical", [
-                     "y"
-                    ]]
-                ],
-                "weight",
-                "histogramBins",
-                "overrideSize",
-                [
-                    ["Horizontal", [
-                        "horizontalSize",
-                        "horizontalOffset"
-                    ]],
-                    ["Vertical", [
-                        "verticalSize",
-                        "verticalOffset"
-                    ]]
-                ],
-                "aspectRatio",
-                "colorMap",
-                "notes"
+                "distanceFromSource"
             ]
         },
         "simulation": {
@@ -1334,34 +1354,8 @@
             ]
         },
         "watchpointReport": {
-            "title": "Watchpoint Report",
-            "basic": [],
-            "advanced": [
-                [
-                    ["Horizontal", [
-                     "x"
-                    ]],
-                    ["Vertical", [
-                     "y"
-                    ]]
-                ],
-                "weight",
-                "histogramBins",
-                "overrideSize",
-                [
-                    ["Horizontal", [
-                        "horizontalSize",
-                        "horizontalOffset"
-                    ]],
-                    ["Vertical", [
-                        "verticalSize",
-                        "verticalOffset"
-                    ]]
-                ],
-                "aspectRatio",
-                "colorMap",
-                "notes"
-            ]
+            "_super": ["_", "view", "_INTENSITY_REPORT"],
+            "title": "Watchpoint Report"
         },
         "wiggler": {
             "title": "Wiggler",

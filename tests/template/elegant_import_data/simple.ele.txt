@@ -6,16 +6,16 @@
 &run_setup
   semaphore_file = run_setup.semaphore,
   lattice = "simple.ele.lte",
-  p_central = 85,
+  p_central = 85.0,
   use_beamline = "bl",
 &end
 
 &sdds_beam
-  input = "bunchFile-sourceFile.PCG.sdds",
+  input = "PCG.sdds",
 &end
 
 &sdds_beam
-  input = "bunchFile-sourceFile.PCG.sdds",
+  input = "PCG.sdds",
 &end
 
 &load_parameters

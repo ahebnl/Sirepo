@@ -1,0 +1,28 @@
+{
+    "dynamicFiles": {
+        "sirepoLibs": {
+            "js": [
+                "jupyterhublogin.js"
+            ]
+        }
+    },
+    "appDefaults": {
+        "route": "migrateJupyter"
+    },
+    "localRoutes": {
+        "migrateJupyter": {
+            "route": "/migrate-jupyter",
+            "config": {
+                "controller": "JupyterhubMigrateController as jupyterhubmigrate",
+                "templateUrl": "/static/html/jupyterhub-migrate.html"
+            }
+        },
+        "jupyterNameConflict": {
+            "route": "/jupyter-name-conflict/:isMigration",
+            "config": {
+                "controller": "NameConflictController as nameConflict",
+                "templateUrl": "/static/html/jupyter-name-conflict.html"
+            }
+        }
+    }
+}

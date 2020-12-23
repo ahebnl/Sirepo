@@ -168,7 +168,7 @@ def generate_field_report(data, run_dir, args=None):
 
 
 def get_application_data(data, **kwargs):
-    if 'method' in data and data['method'] == 'compute_simulation_steps':
+    if data.method == 'compute_simulation_steps':
         field_file = simulation_db.simulation_dir(SIM_TYPE, data['simulationId']) \
             .join('fieldCalculationAnimation').join(_FIELD_ESTIMATE_FILE)
         if field_file.exists():
@@ -180,7 +180,7 @@ def get_application_data(data, **kwargs):
                     'electronFraction': res['e_cross'] if 'e_cross' in res else 0,
                 }
         return {}
-    if 'polys' in data:
+    if data.method == 'save_stl_polys' and 'polys' in data:
         _save_stl_polys(data)
         return {}
     raise RuntimeError('unknown application data method: {}'.format(data['method']))
@@ -624,7 +624,7 @@ def _extract_optimization_results(run_dir, data, args):
         'optimizerInfo': field_info.tolist(),
         'x_index': x_index,
         'y_index': y_index,
-        'fields': map(lambda x: x.field, fields),
+        'fields': [x.field for x in fields],
     }
 
 
@@ -782,8 +782,7 @@ def _generate_parameters_file(data):
     v['conductors'] = _prepare_conductors(data)
     v['maxConductorVoltage'] = _max_conductor_voltage(data)
     v['is3D'] = _SIM_DATA.warpvnd_is_3d(data)
-    v['anode'] = _prepare_anode(data)
-    v['saveIntercept'] = v['anode']['isReflector']
+    v['saveIntercept'] = v['anode_reflectorType'] != 'none' or v['cathode_reflectorType'] != 'none'
     for c in data.models.conductors:
         if c.conductor_type.type == 'stl':
             # if any conductor is STL then don't save the intercept
@@ -792,7 +791,7 @@ def _generate_parameters_file(data):
                 _stl_polygon_file(c.conductor_type.name),
             )
             break
-        if c.conductor_type.isReflector:
+        if c.conductor_type.reflectorType != 'none':
             v['saveIntercept'] = True
     if not v['is3D']:
         v['simulationGrid_num_y'] = v['simulationGrid_num_x']
@@ -938,7 +937,6 @@ def _prepare_conductors(data):
             ct.yLength = 1
         ct.permittivity = ct.permittivity if ct.isConductor == '0' else 'None'
         ct.file = _SIM_DATA.lib_file_abspath(_stl_file(ct)) if 'file' in ct else 'None'
-        ct.isReflector = ct.isReflector == '1' if 'isReflector' in ct else False
     for c in data.models.conductors:
         if c.conductorTypeId not in type_by_id:
             continue
@@ -950,14 +948,6 @@ def _prepare_conductors(data):
     return data.models.conductors
 
 
-def _prepare_anode(data):
-    return {
-        'isReflector': data.models.anode['isReflector'] == '1',
-        'specProb': data.models.anode['specProb'],
-        'diffProb': data.models.anode['diffProb'],
-    }
-
-
 def _read_optimizer_output(run_dir):
     # only considers unique points as steps
     opt_file = run_dir.join(_OPTIMIZER_OUTPUT_FILE)
@@ -965,7 +955,7 @@ def _read_optimizer_output(run_dir):
         return None, None
     try:
         values = np.loadtxt(str(opt_file))
-        if values:
+        if values.any():
             if len(values.shape) == 1:
                 values = np.array([values])
         else:

@@ -5,6 +5,7 @@ var srdbg = SIREPO.srdbg;
 
 SIREPO.app.config(function() {
     SIREPO.appDefaultSimulationValues.simulation.sourceType = 'u';
+    SIREPO.SHOW_HELP_BUTTONS = true;
     SIREPO.INCLUDE_EXAMPLE_FOLDERS = true;
     SIREPO.SINGLE_FRAME_ANIMATION = ['coherenceXAnimation', 'coherenceYAnimation', 'fluxAnimation', 'multiElectronAnimation'];
     SIREPO.PLOTTING_COLOR_MAP = 'grayscale';
@@ -162,7 +163,6 @@ SIREPO.app.factory('srwService', function(activeSection, appDataService, appStat
     self.addSummaryDataListener = function(scope) {
         scope.$on('summaryData', function(e, modelKey, info) {
             // update plot size info from summaryData
-            console.log("on summaryData", appState.isLoaded(), modelKey, info);
             if (appState.isLoaded()) {
                 var range = info.fieldRange;
                 // var intensityRange = info.fieldIntensityRange;
@@ -176,7 +176,6 @@ SIREPO.app.factory('srwService', function(activeSection, appDataService, appStat
                     appState.saveQuietly(modelKey);
                 }
                 if (m && 'useIntensityLimits' in m && m.useIntensityLimits == '0') {
-                    console.log(info)
                     m.minIntensityLimit = info.fieldIntensityRange[0]; // intensityRange[0];
                     m.maxIntensityLimit = info.fieldIntensityRange[1]; // intensityRange[1];
                     appState.saveQuietly(modelKey);
@@ -787,7 +786,46 @@ SIREPO.app.directive('appFooter', function(appState, requestSender, srwService) 
         template: [
             '<div data-common-footer="nav"></div>',
             '<div data-import-python=""></div>',
+            '<div data-confirmation-modal="" data-id="sr-shadow-dialog" data-title="Open as a New Shadow Simulation" data-ok-text="Create" data-ok-clicked="openShadowSimulation()">Create a new Shadow simulation using this simulation\'s beamline?</div>',
         ].join(''),
+        controller: function($scope) {
+
+            function createNewSim(data) {
+                requestSender.sendRequest(
+                    'newSimulation',
+                    function(shadowData) {
+                        var sim = shadowData.models.simulation;
+                        ['simulationId', 'simulationSerial'].forEach(function(f) {
+                            data.models.simulation[f] = sim[f];
+                        });
+                        requestSender.sendRequest(
+                            'saveSimulationData',
+                            openNewSim,
+                            data);
+                    },
+                    newSimData(data));
+            }
+
+            function newSimData(data) {
+                var res = appState.clone(data.models.simulation);
+                res.simulationType = data.simulationType;
+                return res;
+            }
+
+            function openNewSim(data) {
+                requestSender.newLocalWindow(
+                    'beamline', {
+                        simulationId: data.models.simulation.simulationId,
+                    }, data.simulationType);
+            }
+
+            $scope.openShadowSimulation = function() {
+                srwService.computeOnServer(
+                    'create_shadow_simulation',
+                    appState.models,
+                    createNewSim);
+            };
+        },
     };
 });
 
@@ -822,7 +860,7 @@ var srwGrazingAngleLogic = function(panelState, srwService, $scope) {
     SIREPO.beamlineItemLogic(m, srwGrazingAngleLogic);
 });
 
-var srwIntensityLimitLogic = function(appState, panelState, srwService, $scope) {
+var srwIntensityLimitLogic = function(panelState, srwService, $scope) {
 
     function updateIntensityLimit() {
         srwService.updateIntensityLimit(
@@ -879,8 +917,6 @@ var srwIntensityLimitLogic = function(appState, panelState, srwService, $scope) 
 ].forEach(function(view) {
     SIREPO.viewLogic(view, srwIntensityLimitLogic);
 });
-
-
 
 SIREPO.viewLogic('brillianceReportView', function(appState, panelState, $scope) {
 
@@ -955,7 +991,6 @@ SIREPO.beamlineItemLogic('crystalView', function(appState, panelState, srwServic
                 'psiHBr', 'psiHBi', 'orientation',
             ]);
         }
-
     }
 
     function computeCrystalOrientation(item) {
@@ -1448,7 +1483,7 @@ SIREPO.app.directive('appHeader', function(appState, panelState, srwService) {
             '</div>',
           '</app-header-right-sim-loaded>',
           '<app-settings>',
-            //  '<div>App-specific setting item</div>',
+            '<div data-ng-if="showOpenShadow()"><a href data-ng-click="openShadowConfirm()"><span class="glyphicon glyphicon-upload"></span> Open as a New Shadow Simulation</a></div>',
           '</app-settings>',
           '<app-header-right-sim-list>',
             '<ul class="nav navbar-nav sr-navbar-right">',
@@ -1479,7 +1514,6 @@ SIREPO.app.directive('appHeader', function(appState, panelState, srwService) {
                     '</ul>',
                 ].join('')
                 : '',
-
         ].join('');
     }
 
@@ -1520,28 +1554,18 @@ SIREPO.app.directive('appHeader', function(appState, panelState, srwService) {
                 return SIREPO.APP_SCHEMA.feature_config.app_url;
             };
 
+            $scope.openShadowConfirm = function() {
+                $('#sr-shadow-dialog').modal('show');
+            };
+
             $scope.showImportModal = function() {
                 $('#srw-simulation-import').modal('show');
             };
-        },
-    };
-});
 
-SIREPO.app.directive('exportPythonLink', function(appState, panelState) {
-    return {
-        restrict: 'A',
-        scope: {
-            reportTitle: '@',
-        },
-        template: [
-            '<a href data-ng-click="exportPython()">Export Python Code</a>',
-        ].join(''),
-        controller: function($scope) {
-            $scope.exportPython = function() {
-                panelState.pythonSource(
-                    appState.models.simulation.simulationId,
-                    panelState.findParentAttribute($scope, 'modelKey'),
-                    $scope.reportTitle);
+            $scope.showOpenShadow = function() {
+                return SIREPO.APP_SCHEMA.feature_config.show_open_shadow
+                    && $scope.nav.isActive('beamline')
+                    && (srwService.isGaussianBeam() || srwService.isIdealizedUndulator());
             };
         },
     };
@@ -1869,7 +1893,7 @@ SIREPO.app.directive('propagationParameterFieldEditor', function() {
               '<select data-ng-switch-when="WavefrontShiftTreatment" number-to-string class="input-sm" data-ng-model="param[paramInfo.fieldIndex]" data-ng-options="item[0] as item[1] for item in ::wavefrontShiftTreatmentEnum"></select>',
               '<input data-ng-disabled="disabled" data-ng-switch-when="Float" data-string-to-number="" type="text" class="srw-small-float" data-ng-class="{\'sr-disabled-text\': disabled}" data-ng-model="param[paramInfo.fieldIndex]">',
               '<input data-ng-disabled="disabled" data-ng-switch-when="Boolean" type="checkbox" data-ng-model="param[paramInfo.fieldIndex]" data-ng-true-value="1", data-ng-false-value="0">',
-              '<button data-ng-disabled="disabled" data-ng-switch-when="Button" data-ng-model="param[paramInfo.fieldIndex]" data-ng-click="resetDefault()">',
+              '<button class="btn btn-default btn-xs" data-ng-disabled="disabled" data-ng-switch-when="Button" data-ng-model="param[paramInfo.fieldIndex]" data-ng-click="resetDefault()"><span class="glyphicon glyphicon-repeat"> </span></button>',
             '</div>',
         ].join(''),
         controller: function($scope) {
@@ -1878,11 +1902,11 @@ SIREPO.app.directive('propagationParameterFieldEditor', function() {
             $scope.resetDefault = function() {
                // This is hard coded Param index for Orientation Table
                if ($scope.prop && $scope.prop.hasOwnProperty("defaultparams")) {
-                 $scope.param[12] = $scope.prop["defaultparams"][0];
-                 $scope.param[13] = $scope.prop["defaultparams"][1];
-                 $scope.param[14] = $scope.prop["defaultparams"][2];
-                 $scope.param[15] = $scope.prop["defaultparams"][3];
-                 $scope.param[16] = $scope.prop["defaultparams"][4];
+                 $scope.param[12] = $scope.prop.defaultparams[0];
+                 $scope.param[13] = $scope.prop.defaultparams[1];
+                 $scope.param[14] = $scope.prop.defaultparams[2];
+                 $scope.param[15] = $scope.prop.defaultparams[3];
+                 $scope.param[16] = $scope.prop.defaultparams[4];
                }
              };
         },

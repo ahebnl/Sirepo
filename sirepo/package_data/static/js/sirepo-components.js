@@ -50,7 +50,11 @@ SIREPO.app.directive('advancedEditorPane', function(appState, panelState, $compi
             var i;
 
             function camelToKebabCase(v) {
+                if (v.toUpperCase() == v) {
+                    return v.toLowerCase();
+                }
                 v = v.charAt(0).toLowerCase() + v.slice(1);
+                v = v.replace(/\_/g, '-');
                 return v.replace(/([A-Z])/g, '-$1').toLowerCase();
             }
 
@@ -266,7 +270,7 @@ SIREPO.app.directive('buttons', function(appState, panelState) {
         },
         template: [
             '<div data-ng-show="isFormDirty()">',
-              '<button data-ng-click="saveChanges()" class="btn btn-primary" data-ng-disabled="! form.$valid">Save Changes</button> ',
+              '<button data-ng-click="saveChanges()" class="btn btn-primary" data-ng-disabled="! isFormValid()">Save Changes</button> ',
               '<button data-ng-click="cancelChanges()" class="btn btn-default">Cancel</button>',
             '</div>',
         ].join(''),
@@ -281,6 +285,17 @@ SIREPO.app.directive('buttons', function(appState, panelState) {
                 $scope.form.$setPristine();
             }
 
+            // returns an array of form elements (the DOM elements attribute is an
+            // HTMLCollection)
+            function getControls(form) {
+                let els = form.$$element[0].elements;
+                let ctls = [];
+                for (let el of els) {
+                    ctls.push(el);
+                }
+                return ctls;
+            }
+
             $scope.cancelChanges = function() {
                 appState.cancelChanges(Object.keys(fieldsByModel));
             };
@@ -292,7 +307,19 @@ SIREPO.app.directive('buttons', function(appState, panelState) {
                 return appState.areFieldsDirty(fieldsByModel);
             };
 
-            $scope.saveChanges = function() {
+            $scope.isFormValid = function() {
+                // this is a first step in using HTML5 field validation
+                let ctlsValid = getControls($scope.form)
+                    .map(function (el) {
+                        return el.validity.valid;
+                    })
+                    .reduce(function (prev, curr) {
+                        return prev && curr;
+                    }, true);
+                return ctlsValid && $scope.form.$valid;
+            };
+
+           $scope.saveChanges = function() {
                 if ($scope.form.$valid) {
                     appState.saveChanges(Object.keys(fieldsByModel));
                 }
@@ -316,18 +343,26 @@ SIREPO.app.directive('canceledDueToTimeoutAlert', function(authState) {
             simState: '=canceledDueToTimeoutAlert',
         },
         template: [
-            '<div data-ng-if="simState.getCanceledAfterSecs()" class="alert alert-warning" role="alert">',
+            '<div data-ng-if="showAlert()" class="alert alert-warning" role="alert">',
               '<h4 class="alert-heading"><b>Canceled: Maximum runtime exceeded</b></h4>',
               '<p>Your runtime limit is {{getTime()}}. To increase your maximum runtime, please upgrade to ' + authState.upgradePlanLink() + '.</p>',
             '</div>',
         ].join(''),
         controller: function($scope, appState) {
             $scope.authState = authState;
+            let hideAlert = false;
+
+            $scope.$on('sbatchLoginDone', function() {
+                hideAlert = true;
+            });
 
             $scope.getTime = function() {
                 return appState.formatTime($scope.simState.getCanceledAfterSecs());
             };
 
+            $scope.showAlert = function() {
+                return $scope.simState.getCanceledAfterSecs() && ! hideAlert;
+            };
         },
     };
 });
@@ -440,6 +475,26 @@ SIREPO.app.directive('copyConfirmation', function(appState, fileManager, strings
                     $scope.copyCfg.copyName,
                     $scope.copyCfg.copyFolder
                 );
+            };
+        },
+    };
+});
+
+SIREPO.app.directive('exportPythonLink', function(appState, panelState) {
+    return {
+        restrict: 'A',
+        scope: {
+            reportTitle: '@',
+        },
+        template: [
+            '<a href data-ng-click="exportPython()">Export Python Code</a>',
+        ].join(''),
+        controller: function($scope) {
+            $scope.exportPython = function() {
+                panelState.pythonSource(
+                    appState.models.simulation.simulationId,
+                    panelState.findParentAttribute($scope, 'modelKey'),
+                    $scope.reportTitle);
             };
         },
     };
@@ -1067,13 +1122,19 @@ SIREPO.app.directive('helpButton', function($window) {
             helpTopic: '@helpButton',
         },
         template: [
-            '<button class="close sr-help-icon" title="{{ ::helpTopic }} Help" data-ng-click="openHelp()"><span class="glyphicon glyphicon-question-sign"></span></button>',
+            '<button data-ng-if="::showHelp()" class="close sr-help-icon" title="{{ ::helpTopic }} Help" data-ng-click="openHelp()"><span class="glyphicon glyphicon-question-sign"></span></button>',
         ].join(''),
         controller: function($scope) {
             $scope.openHelp = function() {
                 $window.open(
                     HELP_WIKI_ROOT + $scope.helpTopic.replace(/\s+/, '-'),
                     '_blank');
+            };
+            $scope.showHelp = function() {
+                if ('SHOW_HELP_BUTTONS' in SIREPO) {
+                    return SIREPO.SHOW_HELP_BUTTONS;
+                }
+                return false;
             };
         },
     };
@@ -1217,7 +1278,12 @@ SIREPO.app.directive('modalEditor', function(appState, panelState) {
                     hideModal();
                 }
             });
-            $scope.$on('cancelChanges', hideModal);
+            $scope.$on('cancelChanges', function (e, name){
+                // too blunt? May need parent/child concept?
+                if (name === $scope.modelKey) {
+                    hideModal();
+                }
+            });
         },
         link: function(scope, element) {
             $(element).on('shown.bs.modal', function() {
@@ -1228,7 +1294,7 @@ SIREPO.app.directive('modalEditor', function(appState, panelState) {
                     });
                 }
             });
-            $(element).on('hidden.bs.modal', function() {
+            $(element).on('hidden.bs.modal', function(o) {
                 // ensure that a dismissed modal doesn't keep changes
                 // ok processing will have already saved data before the modal is hidden
                 var viewInfo = appState.viewInfo(scope.viewName);
@@ -1481,7 +1547,7 @@ SIREPO.app.directive('simulationStoppedStatus', function(authState) {
 
                 const s = SIREPO.APP_SCHEMA.strings;
                 const f = $scope.simState.getFrameCount();
-                var c = f > 0 ? s.completionState : '';
+                let c = f > 0 ? s.completionState : '';
                 if ($scope.simState.controller.simCompletionState) {
                     c = $scope.simState.controller.simCompletionState(c);
                 }
@@ -1739,8 +1805,9 @@ SIREPO.app.directive('panelHeading', function(appState, frameCache, panelState, 
                   '<li><a href data-ng-click="downloadImage(720)">PNG - Medium</a></li>',
                   '<li><a href data-ng-click="downloadImage(1080)">PNG - Large</a></li>',
                   '<li data-ng-if="::hasDataFile" role="separator" class="divider"></li>',
-                  '<li data-ng-if="::hasDataFile"><a data-ng-href="{{ dataFileURL() }}" target="_blank">Raw Data File</a></li>',
+                  '<li data-ng-if="::hasDataFile"><a data-ng-href="{{ dataFileURL() }}" target="_blank">{{ dataDownloadTitle }}</a></li>',
                   SIREPO.appDownloadLinks || '',
+                  '<li data-ng-if="::hasDataFile" data-ng-repeat="l in panelDownloadLinks"><a data-ng-href="{{ dataFileURL(l.suffix) }}" target="_blank">{{ l.title }}</a></li>',
                 '</ul>',
               '</div>',
               '<a href data-ng-show="isReport && ! panelState.isHidden(modelKey)" data-ng-attr-title="{{ fullscreenIconTitle() }}" data-ng-click="toggleFullScreen()"><span class="sr-panel-heading glyphicon" data-ng-class="{\'glyphicon-resize-full\': ! utilities.isFullscreen(), \'glyphicon-resize-small\': utilities.isFullscreen()}"></span></a> ',
@@ -1749,9 +1816,15 @@ SIREPO.app.directive('panelHeading', function(appState, frameCache, panelState, 
         controller: function($scope, $element) {
             $scope.panelState = panelState;
             $scope.utilities = utilities;
+            let viewKey = $scope.viewName || $scope.modelKey;
+            let dl = SIREPO.APP_SCHEMA.constants.dataDownloads || {};
+            let df = ((dl._default || [])[0] || {});
+            $scope.panelDownloadLinks = dl[viewKey] || [];
+            $scope.dataDownloadTitle = df.title  || 'Raw Data File';
+            $scope.dataDownloadSuffix = df.suffix  || '';
 
             // modelKey may not exist in viewInfo, assume it has an editor in that case
-            var view = appState.viewInfo($scope.viewName || $scope.modelKey);
+            var view = appState.viewInfo(viewKey);
             $scope.hasEditor = view && view.advanced.length === 0 ? false : true;
             $scope.hasDataFile = view && view.hasOwnProperty('hasDataFile') ? view.hasDataFile : true;
 
@@ -1899,7 +1972,7 @@ SIREPO.app.directive('reportContent', function(panelState) {
     };
 });
 
-SIREPO.app.directive('reportPanel', function(appState) {
+SIREPO.app.directive('reportPanel', function(appState, utilities) {
     return {
         restrict: 'A',
         transclude: true,
@@ -1919,7 +1992,7 @@ SIREPO.app.directive('reportPanel', function(appState) {
         ].join(''),
         controller: function($scope) {
             // random id for the keypress service to track
-            $scope.reportId = Math.floor(Math.random() * Number.MAX_SAFE_INTEGER);
+            $scope.reportId = utilities.reportId();  //Math.floor(Math.random() * Number.MAX_SAFE_INTEGER);
 
             $scope.modelKey = $scope.modelName;
             if ($scope.modelData) {
@@ -2239,7 +2312,7 @@ SIREPO.app.directive('importDialog', function(appState, fileManager, fileUpload,
     };
 });
 
-SIREPO.app.directive('settingsMenu', function(appDataService, appState, fileManager, panelState, requestSender, stringsService, $compile, $timeout, $window) {
+SIREPO.app.directive('settingsMenu', function(appDataService, appState, fileManager, panelState, requestSender, stringsService, $compile, $timeout) {
 
     return {
         restrict: 'A',
@@ -2258,7 +2331,7 @@ SIREPO.app.directive('settingsMenu', function(appDataService, appState, fileMana
                     '<li class="sr-settings-submenu" data-ng-transclude="appSettingsSlot"></li>',
                     '<li><a href data-ng-if="nav.modeIsDefault()" data-ng-click="showDocumentationUrl()"><span class="glyphicon glyphicon-book"></span> Simulation Documentation URL</a></li>',
                     '<li><a href data-ng-click="exportArchive(\'zip\')"><span class="glyphicon glyphicon-cloud-download"></span> Export as ZIP</a></li>',
-                    '<li><a href data-ng-click="pythonSource()"><span class="glyphicon glyphicon-cloud-download sr-nav-icon"></span> Python Source</a></li>',
+                    '<li><a href data-ng-click="pythonSource()"><span class="glyphicon glyphicon-cloud-download sr-nav-icon"></span> {{ ::stringsService.formatKey(\'simulationSource\') }}</a></li>',
                     '<li data-ng-if="::canExportJupyter()"><a href data-ng-click="exportJupyterNotebook()"><span class="glyphicon glyphicon-cloud-download sr-nav-icon"></span> Export as Jupyter Notebook</a></li>',
                     '<li data-ng-if="::canExportMadx()" ><a href data-ng-click="pythonSource(\'madx\')"><span class="glyphicon glyphicon-cloud-download sr-nav-icon"></span> Export as MAD-X lattice</a></li>',
                     '<li data-ng-if="canCopy()"><a href data-ng-click="copyItem()"><span class="glyphicon glyphicon-copy"></span> Open as a New Copy</a></li>',
@@ -2395,11 +2468,11 @@ SIREPO.app.directive('settingsMenu', function(appDataService, appState, fileMana
             };
 
             $scope.exportArchive = function(extension) {
-                $window.open(requestSender.formatUrl('exportArchive', {
+                requestSender.newWindow('exportArchive', {
                     '<simulation_id>': $scope.simulationId(),
                     '<simulation_type>': SIREPO.APP_SCHEMA.simulationType,
                     '<filename>':  $scope.nav.simulationName() + '.' + extension,
-                }), '_blank');
+                });
             };
 
             $scope.$on('simulationUnloaded', function() {
@@ -2496,19 +2569,23 @@ SIREPO.app.directive('completeRegistration', function($window, requestSender, er
     return {
         restrict: 'A',
         template: [
-            '<div class="row text-center">',
-            '<p>Please enter your full name to complete your Sirepo registration.</p>',
-            '</div>',
             '<form class="form-horizontal" autocomplete="off" novalidate>',
-              '<div class="row text-center">',
+              '<div class="form-group">',
+                '<div class="col-sm-offset-3 col-sm-10">',
+                  '<p>Please enter your full name to complete your Sirepo registration.</p>',
+                '</div>',
+              '</div>',
+              '<div class="form-group">',
                 '<label class="col-sm-3 control-label">Your full name</label>',
                 '<div class="col-sm-7">',
                   '<input name="displayName" class="form-control" data-ng-model="loginConfirm.data.displayName" required/>',
                   '<div class="sr-input-warning" data-ng-show="showWarning">{{ loginConfirm.warningText }}</div>',
                 '</div>',
               '</div>',
-              '<div class="row text-center" style="margin-top: 10px">',
+              '<div class="form-group">',
+                '<div class="col-sm-offset-3 col-sm-10">',
                  '<button data-ng-click="loginConfirm.submit()" class="btn btn-primary" data-ng-disabled="! loginConfirm.data.displayName">Submit</button>',
+                '</div>',
               '</div>',
             '</form>',
         ].join(''),
@@ -2520,19 +2597,27 @@ SIREPO.app.directive('emailLogin', function(requestSender, errorService) {
         restrict: 'A',
         scope: {},
         template: [
-            '<div class="row text-center">',
-              '<p>Enter your email address and we\'ll send an authorization link to your inbox.</p>',
+            '<div data-ng-show="isJupyterhub" class="alert alert-info col-sm-offset-2 col-sm-10" role="alert">',
+            'We\'re improving your Jupyter experience by making both Jupyter and Sirepo accessible via a single email login. Simply follow the directions below to complete this process.',
             '</div>',
             '<form class="form-horizontal" autocomplete="off" novalidate>',
-              '<div class="row text-center">',
-                '<label class="col-sm-3 control-label">Your Email</label>',
-                '<div class="col-sm-9">',
+              '<div class="form-group">',
+                '<div class="col-sm-offset-2 col-sm-10">',
+                  '<p>Enter your email address and we\'ll send an authorization link to your inbox.</p>',
+                '</div>',
+              '</div>',
+              '<div class="form-group">',
+                '<label class="col-sm-2 control-label">Your Email</label>',
+                '<div class="col-sm-10">',
                   '<input type="text" class="form-control" data-ng-model="data.email" required/>',
                   '<div class="sr-input-warning" data-ng-show="showWarning">{{ warningText }}</div>',
                 '</div>',
               '</div>',
-              '<div class="row text-center" style="margin-top: 10px">',
-                 '<button data-ng-click="login()" class="btn btn-primary">Continue</button>',
+              '<div class="form-group">',
+                '<div class="col-sm-offset-2 col-sm-10">',
+                  '<button data-ng-click="login()" class="btn btn-primary">Continue</button>',
+                  '<p class="help-block">By signing up for Sirepo you agree to Sirepo\'s <a href="en/privacy.html">privacy policy</a> and <a href="en/terms.html">terms and conditions</a>, and to receive informational and marketing communications from RadiaSoft. You may unsubscribe at any time.</p>',
+                '</div>',
               '</div>',
             '</form>',
             '<div data-confirmation-modal="" data-is-required="true" data-id="sr-email-login-done" data-title="Check your inbox" data-ok-text="" data-cancel-text="">',
@@ -2552,7 +2637,9 @@ SIREPO.app.directive('emailLogin', function(requestSender, errorService) {
                     $scope.warningText = 'Server reported an error, please contact support@radiasoft.net.';
                 }
             }
+
             $scope.data = {};
+            $scope.isJupyterhub = SIREPO.APP_SCHEMA.simulationType == 'jupyterhublogin';
             $scope.login = function() {
                 var e = $scope.data.email;
                 errorService.alertText('');
@@ -2958,7 +3045,7 @@ SIREPO.app.directive('optimizeFloat', function(appState, panelState) {
         },
         template: [
             // keep the field the same dimensions as regular float, but offset width by button size
-            '<div class="input-group input-group-sm" style="margin-right: -30px">',
+            '<div class="input-group input-group-sm">',
               '<input data-string-to-number="" data-ng-model="model[field]" data-min="min" data-max="max" class="form-control" style="text-align: right" data-lpignore="true" required />',
               '<div class="input-group-btn">',
                 '<button data-ng-attr-class="btn btn-{{ buttonName() }} dropdown-toggle" data-toggle="dropdown" type="button" title="Optimization Settings"><span class="glyphicon glyphicon-cog"></span></button>',
@@ -3291,6 +3378,7 @@ SIREPO.app.directive('sbatchLoginModal', function() {
                     errorResponse = data.error;
                 }
                 sbatchLoginStatusService.loggedIn = data.loginSuccess ? true: false;
+                $rootScope.$broadcast('sbatchLoginDone');
                 el.modal('hide');
             }
 
@@ -3952,16 +4040,70 @@ SIREPO.app.service('sbatchLoginStatusService', function($rootScope) {
 
 });
 
+SIREPO.app.directive('simList', function(appState, requestSender) {
+    return {
+        restrict: 'A',
+        scope: {
+            code: '@',
+            model: '=',
+            field: '=',
+            route: '@',
+        },
+        template: [
+            '<div style="white-space: nowrap">',
+              '<select style="display: inline-block" class="form-control" data-ng-model="model[field]" data-ng-options="item.simulationId as item.name for item in simList"></select>',
+              ' ',
+              '<button type="button" title="View Simulation" class="btn btn-default" data-ng-click="openSimulation()"><span class="glyphicon glyphicon-eye-open"></span></button>',
+            '</div>',
+        ].join(''),
+        controller: function($scope) {
+            $scope.simList = null;
+            $scope.openSimulation = function() {
+                if ($scope.model && $scope.model[$scope.field]) {
+                    //TODO(e-carlin): this depends on the visualization route
+                    // being present in both the caller and callee apps.
+                    // Need meta data for a page in another app
+                    requestSender.newLocalWindow(
+                        $scope.route || 'visualization',
+                        {':simulationId': $scope.model[$scope.field]},
+                        $scope.code);
+                }
+            };
+            appState.whenModelsLoaded($scope, function() {
+                requestSender.getApplicationData(
+                    {
+                        method: 'get_' + $scope.code + '_sim_list'
+                    },
+                    function(data) {
+                        if (appState.isLoaded() && data.simList) {
+                            $scope.simList = data.simList.sort(function(a, b) {
+                                return a.name.localeCompare(b.name);
+                            });
+                        }
+                    });
+            });
+        },
+    };
+});
+
 SIREPO.app.service('utilities', function($window, $interval) {
 
     var self = this;
 
-    this.modelFieldID = function (modelName, fieldName) {
+    this.modelFieldID = function(modelName, fieldName) {
         return 'model-' + modelName + '-' + fieldName;
     };
 
-    this.ngModelForInput = function (modelName, fieldName) {
+    this.ngModelForElement = function(el) {
+        return angular.element(el).controller('ngModel');
+    };
+
+    this.ngModelForInput = function(modelName, fieldName) {
         return angular.element($('.' + this.modelFieldID(modelName, fieldName) + ' input')).controller('ngModel');
+    };
+
+    this.reportId = function() {
+        return Math.floor(Math.random() * Number.MAX_SAFE_INTEGER);
     };
 
     this.isWide = function() {

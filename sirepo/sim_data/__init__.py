@@ -463,7 +463,7 @@ class SimDataBase(object):
 
     @classmethod
     def proprietary_code_rpm(cls):
-        return f'{cls.sim_type()}.rpm'
+        return None
 
     @classmethod
     def resource_dir(cls):
@@ -646,13 +646,18 @@ class SimDataBase(object):
         s = set(data.models.get(model, {}).keys()) - cls.ANALYSIS_ONLY_FIELDS
         if not s:
             return [model]
-        return ['{}.{}'.format(model, x) for x in s]
+        return sorted(['{}.{}'.format(model, x) for x in s])
 
     @classmethod
     def _organize_example(cls, data):
         dm = data.models
         if dm.simulation.get('isExample') and dm.simulation.folder == '/':
             dm.simulation.folder = '/Examples'
+
+    @classmethod
+    def _proprietary_code_rpm(cls):
+        return f'{cls.sim_type()}.rpm'
+
 
 
 def split_jid(jid):

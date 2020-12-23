@@ -16,9 +16,9 @@ from sirepo.template import elegant_command_importer
 from sirepo.template import elegant_common
 from sirepo.template import elegant_lattice_importer
 from sirepo.template import lattice
-from sirepo.template import sdds_util
 from sirepo.template import template_common
 from sirepo.template.lattice import LatticeUtil
+from sirepo.template.madx_converter import MadxConverter
 import copy
 import glob
 import math
@@ -26,7 +26,7 @@ import os
 import os.path
 import py.path
 import re
-import sdds
+import sirepo.lib
 import sirepo.sim_data
 import stat
 
@@ -65,7 +65,7 @@ _FIELD_LABEL = PKDict(
 
 _OUTPUT_INFO_FILE = 'outputInfo.json'
 
-_OUTPUT_INFO_VERSION = '2'
+_OUTPUT_INFO_VERSION = '3'
 
 _PLOT_TITLE = PKDict({
     'x-xp': 'Horizontal',
@@ -74,13 +74,7 @@ _PLOT_TITLE = PKDict({
     't-p': 'Longitudinal',
 })
 
-_SDDS_INDEX = 0
-
-_s = sdds.SDDS(_SDDS_INDEX)
-_x = getattr(_s, 'SDDS_LONGDOUBLE', None)
-_SDDS_DOUBLE_TYPES = [_s.SDDS_DOUBLE, _s.SDDS_FLOAT] + ([_x] if _x else [])
-
-_SDDS_STRING_TYPE = _s.SDDS_STRING
+_SDDS_INDEX = None
 
 _SIMPLE_UNITS = ['m', 's', 'C', 'rad', 'eV']
 
@@ -96,41 +90,39 @@ class CommandIterator(lattice.ElementIterator):
             self.fields.append(['mpi_io_write_buffer_size', _MPI_IO_WRITE_BUFFER_SIZE])
 
 
-class LibAdapter:
+class LibAdapter(sirepo.lib.LibAdapterBase):
 
     def parse_file(self, path):
 
         def _input_files(model_type):
             return [k for k, v in _SCHEMA.model[model_type].items() if 'InputFile' in v[1]];
 
-        def _verify_files(model, model_type, model_name, category):
-            for i in _input_files(model_type):
-                f = model.get(i)
-                if not f:
-                    continue
-                assert sirepo.util.secure_filename(f) == f, \
-                    f'file={f} must be a simple name'
-                p = path.dirpath().join(f)
-                assert p.check(file=True), \
-                    f'file={f} missing from {category}={model_name} type={model_type}'
+        def _verify_files(model, model_type):
+            self._verify_files(
+                path,
+                [model[x] for x in filter(
+                    lambda f: model[f],
+                    _input_files(model_type),
+                )],
+            )
 
-        d = parse_input_text(path)
+        d = parse_input_text(path, update_filenames=False)
         r = self._run_setup(d)
         l = r.lattice
         d = parse_input_text(
             self._lattice_path(path.dirpath(), d),
             input_data=d,
+            update_filenames=False,
         )
         for i in d.models.elements:
-            _verify_files(i, i.type, i.name, 'element')
+            _verify_files(i, i.type)
         for i in d.models.commands:
-            _verify_files(i, lattice.LatticeUtil.model_name_for_data(i), i._type, 'command')
+            _verify_files(i, lattice.LatticeUtil.model_name_for_data(i))
         r.lattice = l
-        return d
+        return self._convert(d)
 
     def write_files(self, data, source_path, dest_dir):
         """writes files for the simulation
-
 
         Returns:
             PKDict: structure of files written (debugging only)
@@ -139,7 +131,7 @@ class LibAdapter:
 
         class _G(_Generate):
 
-            def _abspath(basename):
+            def _abspath(self, basename):
                 return source_path.new(basename=basename)
 
             def _input_file(self, model_name, field, filename):
@@ -148,7 +140,7 @@ class LibAdapter:
             def _lattice_filename(self, value):
                 return value
 
-        g = _G(data)
+        g = _G(data, update_output_filenames=False)
         g.sim()
         v = g.jinja_env
         r = PKDict(
@@ -156,10 +148,11 @@ class LibAdapter:
             lattice=self._lattice_path(dest_dir, data),
         )
         pkio.write_text(r.commands, v.commands)
-        pkio.write_text(r.lattice, v.rpn_variables + v.lattice)
-        for f in LatticeUtil(data, _SCHEMA).iterate_models(lattice.InputFileIterator(_SIM_DATA)).result:
-            f = _SIM_DATA.lib_file_name_without_type(f)
-            source_path.new(basename=f).copy(dest_dir.join(f), mode=True)
+        if not r.lattice.exists():
+            pkio.write_text(r.lattice, v.rpn_variables + v.lattice)
+        self._write_input_files(data, source_path, dest_dir)
+        f = g.filename_map
+        r.output_files = [f[k] for k in f.keys_in_order]
         return r
 
     def _lattice_path(self, dest_dir, data):
@@ -171,24 +164,29 @@ class LibAdapter:
 
 class OutputFileIterator(lattice.ModelIterator):
 
-    def __init__(self):
+    def __init__(self, update_filenames):
         self.result = PKDict(
             keys_in_order=[],
         )
         self.model_index = PKDict()
+        self._update_filenames = update_filenames
 
     def field(self, model, field_schema, field):
         self.field_index += 1
-        if field_schema[1] == 'OutputFile':
-            if LatticeUtil.is_command(model):
-                suffix = self._command_file_extension(model)
-                filename = '{}{}.{}.{}'.format(
-                    model._type,
-                    self.model_index[self.model_name] if self.model_index[self.model_name] > 1 else '',
-                    field,
-                    suffix)
+        if field_schema[1] == 'OutputFile' and model[field]:
+            if self._update_filenames:
+                if LatticeUtil.is_command(model):
+                    suffix = self._command_file_extension(model)
+                    filename = '{}{}.{}.{}'.format(
+                        model._type,
+                        self.model_index[self.model_name] if self.model_index[self.model_name] > 1 else '',
+                        field,
+                        suffix,
+                    )
+                else:
+                    filename = '{}.{}.sdds'.format(model.name, field)
             else:
-                filename = '{}.{}.sdds'.format(model.name, field)
+                filename = model[field]
             k = LatticeUtil.file_id(model._id, self.field_index)
             self.result[k] = filename
             self.result.keys_in_order.append(k)
@@ -207,6 +205,225 @@ class OutputFileIterator(lattice.ModelIterator):
         if model._type == 'global_settings':
             return 'txt'
         return 'sdds'
+
+
+class ElegantMadxConverter(MadxConverter):
+    _BEAM_VARS = ['beta_x', 'beta_y', 'alpha_x', 'alpha_y', 'n_particles_per_bunch', 'dp_s_coupling'];
+    _PARTICLE_MAP = PKDict(
+        electron='electron',
+        positron='positron',
+        proton='proton',
+        muon='negmuon',
+        negmuon='muon',
+        custom='other',
+    )
+    _FIELD_MAP = [
+        ['DRIFT',
+            ['DRIF', 'l'],
+            ['CSRDRIFT', 'l'],
+            ['EDRIFT', 'l'],
+            ['LSCDRIFT', 'l'],
+        ],
+        ['SBEND',
+            ['CSBEND', 'l', 'angle', 'k1', 'k2', 'e1', 'e2', 'h1', 'h2', 'tilt', 'hgap', 'fint'],
+            ['SBEN', 'l', 'angle', 'k1', 'k2', 'e1', 'e2', 'h1', 'h2', 'tilt', 'hgap', 'fint'],
+            ['CSRCSBEND', 'l', 'angle', 'k1', 'k2', 'e1', 'e2', 'h1', 'h2', 'tilt', 'hgap', 'fint'],
+            ['KSBEND', 'l', 'angle', 'k1', 'k2', 'e1', 'e2', 'h1', 'h2', 'tilt', 'hgap', 'fint'],
+            ['NIBEND', 'l', 'angle', 'e1', 'e2', 'tilt', 'hgap', 'fint'],
+        ],
+        ['RBEND',
+            ['RBEN', 'l', 'angle', 'k1', 'k2', 'e1', 'e2', 'h1', 'h2', 'tilt', 'hgap', 'fint'],
+            ['TUBEND', 'l', 'angle'],
+        ],
+        ['QUADRUPOLE',
+            ['QUAD', 'l', 'k1', 'tilt'],
+            ['KQUAD', 'l', 'k1', 'tilt'],
+        ],
+        ['SEXTUPOLE',
+            ['SEXT', 'l', 'k2', 'tilt'],
+            ['KSEXT', 'l', 'k2', 'tilt'],
+        ],
+        ['OCTUPOLE',
+            ['OCTU', 'l', 'k3', 'tilt'],
+            ['KOCT', 'l', 'k3', 'tilt'],
+        ],
+        ['SOLENOID',
+            ['SOLE', 'l', 'ks'],
+        ],
+        ['MULTIPOLE',
+         #TODO(pjm): compute knl and order from first knl value in madx
+            ['MULT', 'tilt'],
+        ],
+        ['HKICKER',
+            ['HKICK', 'l', 'kick', 'tilt'],
+            ['EHKICK', 'l', 'kick', 'tilt'],
+        ],
+        ['VKICKER',
+            ['VKICK', 'l', 'kick', 'tilt'],
+            ['EVKICK', 'l', 'kick', 'tilt'],
+        ],
+        ['KICKER',
+            ['KICKER', 'l', 'hkick', 'vkick', 'tilt'],
+            ['EKICKER', 'l', 'hkick', 'vkick', 'tilt'],
+        ],
+        ['MARKER',
+            ['MARK'],
+        ],
+        ['PLACEHOLDER',
+            ['DRIF', 'l'],
+        ],
+        ['INSTRUMENT',
+            ['DRIF', 'l'],
+        ],
+        ['ECOLLIMATOR',
+            ['ECOL', 'l', 'x_max=xsize', 'y_max=ysize'],
+        ],
+        ['RCOLLIMATOR',
+            ['RCOL', 'l', 'x_max=xsize', 'y_max=ysize'],
+        ],
+        ['COLLIMATOR apertype=ELLIPSE',
+            ['ECOL', 'l', 'x_max=xsize', 'y_max=ysize'],
+        ],
+        ['COLLIMATOR apertype=RECTANGLE',
+            ['RCOL', 'l', 'x_max=xsize', 'y_max=ysize'],
+        ],
+        ['RFCAVITY',
+            ['RFCA', 'l', 'volt', 'freq', 'phase=lag'],
+            ['MODRF', 'l', 'volt', 'freq', 'phase=lag'],
+            ['RAMPRF', 'l', 'volt', 'freq', 'phase=lag'],
+            ['RFCW', 'l', 'volt', 'freq', 'phase=lag'],
+        ],
+        ['TWCAVITY',
+            ['RFDF', 'l', 'voltage=volt', 'frequency=freq', 'phase=lag'],
+        ],
+        ['HMONITOR',
+            ['HMON', 'l'],
+        ],
+        ['VMONITOR',
+            ['VMON', 'l'],
+        ],
+        ['MONITOR',
+            ['MONI', 'l'],
+            ['WATCH'],
+        ],
+        ['SROTATION',
+            ['SROT', 'tilt=angle'],
+        ],
+    ]
+    _FIELD_SCALE = PKDict(
+        RFCAVITY=PKDict(
+            freq='1e6',
+            volt='1e6',
+        ),
+        TWCAVITY=PKDict(
+            freq='1e6',
+            volt='1e6',
+        ),
+    )
+
+
+    def __init__(self):
+        super().__init__(SIM_TYPE, self._FIELD_MAP, downcase_variables=True)
+
+    def from_madx(self, madx):
+        data = super().from_madx(madx)
+        eb = LatticeUtil.find_first_command(data, 'bunched_beam')
+        mb = LatticeUtil.find_first_command(madx, 'beam')
+        for f in self._BEAM_VARS:
+            v = self._find_var(madx, f)
+            if v:
+                eb[f] = v.value
+        ers = LatticeUtil.find_first_command(data, 'run_setup')
+        ers.p_central_mev = self.particle_energy.pc * 1e3
+        eb.emit_x = mb.ex
+        eb.emit_y = mb.ey
+        eb.sigma_s = mb.sigt
+        eb.sigma_dp = mb.sige
+
+        if mb.particle != 'electron':
+            data.models.commands.insert(0, PKDict(
+                _id=LatticeUtil.max_id(data),
+                _type='change_particle',
+                name=self._PARTICLE_MAP.get(mb.particle, 'custom'),
+                #TODO(pjm): custom particle should set mass_ratio and charge_ratio
+            ))
+        return data
+
+    def to_madx(self, data):
+        madx = super().to_madx(data)
+        eb = LatticeUtil.find_first_command(data, 'bunched_beam')
+        if not eb:
+            return madx
+        self.__normalize_elegant_beam(data, eb)
+        mb = LatticeUtil.find_first_command(madx, 'beam')
+        particle = LatticeUtil.find_first_command(data, 'change_particle')
+        if particle:
+            mb.particle = self._PARTICLE_MAP.get(particle.name, 'other')
+            #TODO(pjm): other particle should set mass and charge
+        else:
+            mb.particle = 'electron'
+        mb.energy = 0
+        madx.models.bunch.beamDefinition = 'pc'
+        madx.models.bunch.longitudinalMethod = '2'
+        mb.pc = eb.p_central_mev * 1e-3
+        mb.sigt = eb.sigma_s
+        mb.sige = eb.sigma_dp
+        for f in self._BEAM_VARS:
+            self._replace_var(madx, f, eb[f])
+        for dim in ('x', 'y'):
+            mb[f'e{dim}'] = eb[f'emit_{dim}']
+            self._replace_var(
+                madx, f'gamma_{dim}',
+                '(1 + pow({}, 2)) / {}'.format(
+                    self._var_name(f'alpha_{dim}'),
+                    self._var_name(f'beta_{dim}'),
+                ),
+            )
+        return madx
+
+    def _fixup_element(self, element_in, element_out):
+        super()._fixup_element(element_in, element_out)
+        if self.from_class.sim_type() == SIM_TYPE:
+            el = element_out
+            op = '/'
+        else:
+            el = element_in
+            op = '*'
+        scale = self._FIELD_SCALE.get(el.type)
+        if scale:
+            for f in scale:
+                element_out[f] = f'{element_out[f]} {op} {scale[f]}'
+
+    def __normalize_elegant_beam(self, data, beam):
+        # ensure p_central_mev, emit_x, emit_y, sigma_s, sigma_dp and dp_s_coupling are set
+        # convert from other values if missing
+        def _var(v):
+            return self.vars.eval_var_with_assert(v)
+        ers = LatticeUtil.find_first_command(data, 'run_setup')
+        if not ers:
+            return
+        if not _var(ers.p_central_mev):
+            #TODO(pjm): use particle mass, don't assume electron
+            ers.p_central_mev = _var(ers.p_central) * _SCHEMA.constants.ELEGANT_ME_EV
+        beam.p_central_mev = _var(ers.p_central_mev)
+        beta_gamma = beam.p_central_mev / _SCHEMA.constants.ELEGANT_ME_EV
+        for f in ('x', 'y'):
+            emit = _var(beam[f'emit_{f}'])
+            if not emit:
+                # convert from normalized emittance
+                emit = beam[f'emit_{f}'] = _var(beam[f'emit_n{f}']) / beta_gamma
+        if str(data.models.bunch.longitudinalMethod) == '2':
+            # convert alpha_z --> dp_s_coupling
+            beam.dp_s_coupling = - _var(beam.alpha_z) / math.sqrt(1 + pow(_var(beam.alpha_z), 2))
+        elif str(data.models.bunch.longitudinalMethod) == '3':
+            # convert emit_z, beta_z, alpha_z --> sigma_s, sigma_dp, dp_s_coupling
+            beam.sigma_s = math.sqrt(_var(beam.emit_z * _var(beam.beta_z)))
+            gamma_z = (1 + _var(beam.alpha_z) ** 2) / _var(beam.beta_z)
+            beam.sigma_dp = math.sqrt(_var(beam.emit_z) * gamma_z)
+            beam.dp_s_coupling = - _var(beam.alpha_z) / math.sqrt(1 + pow(_var(beam.alpha_z), 2))
+        if _var(beam.momentum_chirp):
+            beam.sigma_dp = math.sqrt(_var(beam.sigma_dp) ** 2 + (_var(beam.sigma_s) * _var(beam.momentum_chirp)) ** 2)
+            #TODO(pjm): determine conversion from momentum_chirp to db_s_coupling
 
 
 def background_percent_complete(report, run_dir, is_running):
@@ -232,7 +449,7 @@ def background_percent_complete(report, run_dir, is_running):
             if cmd and cmd.n_steps:
                 n_steps = 0
                 if code_variable.CodeVar.is_var_value(cmd.n_steps):
-                    n_steps = _code_var(data.models.rpnVariables).eval_var(cmd.n_steps)[0]
+                    n_steps = code_var(data.models.rpnVariables).eval_var(cmd.n_steps)[0]
                 else:
                     n_steps = int(cmd.n_steps)
                 if n_steps and n_steps > 0:
@@ -272,6 +489,10 @@ def background_percent_complete(report, run_dir, is_running):
     )
 
 
+def code_var(variables):
+    return elegant_lattice_importer.elegant_code_var(variables)
+
+
 def copy_related_files(data, source_path, target_path):
     # copy results and log for the long-running simulations
     for m in ('animation',):
@@ -297,7 +518,7 @@ def generate_variables(data):
         visited[name] = True
         return f'% {_format_rpn_value(variables[name])} sto {name}\n'
 
-    return _code_var(data.models.rpnVariables).generate_variables(_gen, postfix=True)
+    return code_var(data.models.rpnVariables).generate_variables(_gen, postfix=True)
 
 
 def get_application_data(data, **kwargs):
@@ -307,7 +528,7 @@ def get_application_data(data, **kwargs):
                 _SIM_DATA.lib_file_abspath(data.input_file),
             )
         return data
-    if _code_var(data.variables).get_application_data(data, _SCHEMA):
+    if code_var(data.variables).get_application_data(data, _SCHEMA):
         return data
 
 
@@ -336,7 +557,7 @@ def get_data_file(run_dir, model, frame, options=None, **kwargs):
     if frame >= 0:
         data = simulation_db.read_json(run_dir.join(template_common.INPUT_BASE_NAME))
         # ex. elementAnimation17-55
-        i = re.sub(r'elementAnimation', '', model)
+        i = LatticeUtil.file_id_from_output_model_name(model)
         return _sdds(_get_filename_for_element_id(i, data))
     if model == 'animation':
         return ELEGANT_LOG_FILE
@@ -363,7 +584,7 @@ def import_file(req, test_data=None, **kwargs):
     return res
 
 
-def parse_input_text(path, text=None, input_data=None):
+def parse_input_text(path, text=None, input_data=None, update_filenames=True):
 
     def _map(data):
         for cmd in data.models.commands:
@@ -382,23 +603,19 @@ def parse_input_text(path, text=None, input_data=None):
         text = pkio.read_text(path)
     e = path.ext.lower()
     if e == '.ele':
-        return elegant_command_importer.import_file(text)
+        return elegant_command_importer.import_file(text, update_filenames)
     if e == '.lte':
-        data = elegant_lattice_importer.import_file(text, input_data)
+        data = elegant_lattice_importer.import_file(text, input_data, update_filenames)
         if input_data:
             _map(data)
         return data
     if e == '.madx':
-        from sirepo.template import madx_converter, madx_parser
-        return madx_converter.from_madx(
-            SIM_TYPE,
-            madx_parser.parse_file(text, downcase_variables=True),
-        )
+        return ElegantMadxConverter().from_madx_text(text)
     raise IOError(f'{path.basename}: invalid file format; expecting .madx, .ele, or .lte')
 
 
 def prepare_for_client(data):
-    _code_var(data.models.rpnVariables).compute_cache(data, _SCHEMA)
+    code_var(data.models.rpnVariables).compute_cache(data, _SCHEMA)
     return data
 
 
@@ -420,12 +637,7 @@ def prepare_sequential_output_file(run_dir, data):
 
 def python_source_for_model(data, model):
     if model == 'madx':
-        from sirepo.template import madx, madx_converter
-
-        return madx.python_source_for_model(
-            madx_converter.to_madx(SIM_TYPE, data),
-            None,
-        )
+        return ElegantMadxConverter().to_madx_text(data)
     return generate_parameters_file(data, is_parallel=True) + '''
 with open('elegant.lte', 'w') as f:
     f.write(lattice_file)
@@ -486,6 +698,7 @@ def sim_frame(frame_args):
 def validate_file(file_type, path):
     err = None
     if file_type == 'bunchFile-sourceFile':
+        _sdds_init()
         err = 'expecting sdds file with (x, xp, y, yp, t, p) or (r, pr, pz, t, pphi) columns'
         if sdds.sddsdata.InitializeInput(_SDDS_INDEX, str(path)) == 1:
             beam_type = _sdds_beam_type(sdds.sddsdata.GetColumnNames(_SDDS_INDEX))
@@ -523,19 +736,23 @@ def write_parameters(data, run_dir, is_parallel):
             os.chmod(str(run_dir.join(b)), stat.S_IRUSR | stat.S_IXUSR)
 
 
-class _Generate:
+class _Generate(sirepo.lib.GenerateBase):
 
-    def __init__(self, data, validate=True):
+    def __init__(self, data, validate=True, update_output_filenames=True):
         self.data = data
-        self._util = None
         self._filename_map = None
+        self._schema = _SCHEMA
+        self._update_output_filenames = update_output_filenames
         if validate:
             self._validate_data()
 
     @property
     def filename_map(self):
         if not self._filename_map:
-            self._filename_map = _build_filename_map_from_util(self.util)
+            self._filename_map = _build_filename_map_from_util(
+                self.util,
+                self._update_output_filenames,
+            )
         return self._filename_map
 
     def lattice_only(self):
@@ -551,12 +768,6 @@ class _Generate:
         if d.get('report', '') == 'twissReport':
             return r + self._twiss_simulation()
         return r + self._bunch_simulation()
-
-    @property
-    def util(self):
-        if not self._util:
-            self._util = LatticeUtil(self.data, _SCHEMA)
-        return self._util
 
     def _abspath(self, basename):
         return _SIM_DATA.lib_file_abspath(basename)
@@ -650,7 +861,7 @@ class _Generate:
             if el_type == 'InputFileXY':
                 value += '={}+{}'.format(model[field + 'X'], model[field + 'Y'])
         elif el_type == 'BeamInputFile':
-            value = 'bunchFile-sourceFile.{}'.format(value)
+            value = self._input_file('bunchFile', 'sourceFile', value)
         elif el_type == 'LatticeBeamlineList':
             value = state.id_map[int(value)].name
         elif el_type == 'ElegantLatticeList':
@@ -672,15 +883,10 @@ class _Generate:
             d.models.commands.insert(
                 0,
                 PKDict(
-                    _id=_SIM_DATA.elegant_max_id(d) + 1,
+                    _id=LatticeUtil.max_id(d) + 1,
                     _type='global_settings',
                 ),
             )
-        if d.models.simulation.backtracking == '1':
-            self._setup_backtracking()
-            # other changes are global (modify original data),
-            # but _setup_backtracking makes a copy
-            d = self.data
         self.jinja_env.update(
             commands=self._commands(),
             lattice=self._lattice(),
@@ -706,40 +912,9 @@ class _Generate:
             return 'elegant.lte'
         return value + '.filename.lte'
 
-    def _setup_backtracking(self):
-
-        def _negative(el, fields):
-            for f in fields:
-                if f in el and el[f]:
-                    v = str(el[f])
-                    if re.search(r'^-', v):
-                        v = v[1:]
-                    else:
-                        v = '-' + v
-                    el[f] = v
-                    break
-
-        self.util.data = copy.deepcopy(self.util.data)
-        types = PKDict(
-            bend=[
-                'BRAT', 'BUMPER', 'CSBEND', 'CSRCSBEND', 'FMULT', 'FTABLE', 'KPOLY', 'KSBEND',
-                'KQUSE', 'MBUMPER', 'MULT', 'NIBEND', 'NISEPT', 'RBEN', 'SBEN', 'TUBEND'],
-            mirror=['LMIRROR'],
-        )
-        for el in self.util.data.models.elements:
-            # change signs on length and angle fields
-            _negative(el, ('l', 'xmax'))
-            _negative(el, ('volt', 'voltage', 'initial_v', 'static_voltage'))
-            if el.type in types.bend:
-                _negative(el, ('angle', 'kick', 'hkick'))
-            if el.type in types.mirror:
-                _negative(el, ('theta', ))
-        self.util.select_beamline()['items'].reverse()
-
-
     def _twiss_simulation(self):
         d = self.data
-        max_id = _SIM_DATA.elegant_max_id(d)
+        max_id = LatticeUtil.max_id(d)
         sim = d.models.simulation
         sim.simulationMode = 'serial'
         run_setup = LatticeUtil.find_first_command(d, 'run_setup') or PKDict(
@@ -749,6 +924,7 @@ class _Generate:
             p_central_mev=d.models.bunch.p_central_mev,
         )
         run_setup.use_beamline = sim.activeBeamlineId
+        run_setup.always_change_p0 = '0'
         twiss_output = LatticeUtil.find_first_command(d, 'twiss_output') or PKDict(
             _id=max_id + 2,
             _type='twiss_output',
@@ -772,7 +948,6 @@ class _Generate:
             if 'distribution_type' in m and 'halogaussian' in m.distribution_type:
                 m.distribution_type = m.distribution_type.replace('halogaussian', 'halo(gaussian)')
 
-        # ensure enums match, convert ints/floats, apply scaling
         enum_info = template_common.validate_models(self.data, _SCHEMA)
         _fix(self.data.models.bunch)
         for t in ['elements', 'commands']:
@@ -789,12 +964,8 @@ def _build_filename_map(data):
     return _build_filename_map_from_util(LatticeUtil(data, _SCHEMA))
 
 
-def _build_filename_map_from_util(util):
-    return util.iterate_models(OutputFileIterator()).result
-
-
-def _code_var(variables):
-    return elegant_lattice_importer.elegant_code_var(variables)
+def _build_filename_map_from_util(util, update_filenames=True):
+    return util.iterate_models(OutputFileIterator(update_filenames)).result
 
 
 def _extract_report_data(xFilename, frame_args, page_count=0):
@@ -817,6 +988,7 @@ def _extract_report_data(xFilename, frame_args, page_count=0):
             title += ', Plot {} of {}'.format(page_index + 1, page_count)
         return title
 
+    _sdds_init()
     page_index = frame_args.frameIndex
     xfield = frame_args.x if 'x' in frame_args else frame_args[_X_FIELD]
     # x, column_names, x_def, err
@@ -990,6 +1162,7 @@ def _output_info(run_dir):
                 return res
         except ValueError as e:
             pass
+    _sdds_init()
     data = simulation_db.read_json(run_dir.join(template_common.INPUT_BASE_NAME))
     res = []
     filename_map = _build_filename_map(data)
@@ -997,7 +1170,7 @@ def _output_info(run_dir):
         filename = filename_map[k]
         info = _info(filename, run_dir, k)
         if info:
-            info.modelKey = 'elementAnimation{}'.format(info.id)
+            info.modelKey = LatticeUtil.output_model_name(info.id)
             res.append(info)
     if res:
         res[0]['_version'] = _OUTPUT_INFO_VERSION
@@ -1065,8 +1238,21 @@ def _sdds_beam_type(column_names):
 
 
 def _sdds_beam_type_from_file(path):
+    _sdds_init()
     res = ''
     if sdds.sddsdata.InitializeInput(_SDDS_INDEX, str(path)) == 1:
         res = _sdds_beam_type(sdds.sddsdata.GetColumnNames(_SDDS_INDEX))
     sdds.sddsdata.Terminate(_SDDS_INDEX)
     return res
+
+def _sdds_init():
+    global _SDDS_INDEX, _SDDS_DOUBLE_TYPES, _SDDS_STRING_TYPE, sdds_util, sdds
+    if _SDDS_INDEX is not None:
+        return
+    from sirepo.template import sdds_util
+    import sdds
+    _SDDS_INDEX = 0
+    _s = sdds.SDDS(_SDDS_INDEX)
+    _x = getattr(_s, 'SDDS_LONGDOUBLE', None)
+    _SDDS_DOUBLE_TYPES = [_s.SDDS_DOUBLE, _s.SDDS_FLOAT] + ([_x] if _x else [])
+    _SDDS_STRING_TYPE = _s.SDDS_STRING

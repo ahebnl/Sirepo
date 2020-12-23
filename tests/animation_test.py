@@ -24,16 +24,16 @@ def test_elegant(fc):
         'Compact Storage Ring',
         'animation',
         PKDict({
-            'elementAnimation20-18': PKDict(
+            'elementAnimation20-20': PKDict(
                 expect_y_range='-0.0003.*, 0.0003.*, 200',
             ),
-            'elementAnimation20-25': PKDict(
+            'elementAnimation20-28': PKDict(
                 expect_y_range='^.9.44.*, 0.0012',
             ),
             'elementAnimation22-13': PKDict(
                 expect_y_range=', 34.6',
             ),
-            'elementAnimation20-3': PKDict(
+            'elementAnimation20-4': PKDict(
                 expect_x_range='^.0.0, 46.0',
             ),
         }),
@@ -50,7 +50,7 @@ def test_jspec(fc):
                 expect_y_range=r'2.15e-06',
             ),
             coolingRatesAnimation=PKDict(
-                expect_y_range=r'-0.0[1-9]\d*, (0.00|0)\b',
+                expect_y_range=r'-[\d\.]+, (0.00|0)\b',
             ),
         ),
         timeout=20,
@@ -138,7 +138,7 @@ def test_warpvnd_2(fc):
         PKDict(
             currentAnimation=PKDict(
                 frame_index=0,
-                expect_y_range='0.0, 3.*e-05',
+                expect_y_range='0.0, 2.*e-05',
             ),
             fieldAnimation=PKDict(
                 frame_index=0,

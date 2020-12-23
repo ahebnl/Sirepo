@@ -16,15 +16,8 @@ class SimData(sirepo.sim_data.SimDataBase):
     @classmethod
     def fixup_old_data(cls, data):
         dm = data.models
-        if (
-            float(data.fixup_old_version) < 20170703.000001
-            and 'geometricSource' in dm
-        ):
-            g = data.models.geometricSource
-            x = g.cone_max
-            g.cone_max = g.cone_min
-            g.cone_min = x
         cls._init_models(dm, (
+            'beamStatisticsReport',
             'initialIntensityReport',
             'plotXYReport',
             'undulator',
@@ -66,7 +59,7 @@ class SimData(sirepo.sim_data.SimDataBase):
         if r == 'initialIntensityReport' and data['models']['beamline']:
             res.append([data['models']['beamline'][0]['position']])
         #TODO(pjm): only include items up to the current watchpoint
-        if cls.is_watchpoint(r):
+        if cls.is_watchpoint(r) or r == 'beamStatisticsReport':
             res.append('beamline')
         return res
 

@@ -21,6 +21,7 @@ import flask
 import importlib
 import os
 import re
+import sirepo.events
 import sirepo.sim_data
 import sirepo.srdb
 import sirepo.template
@@ -32,7 +33,7 @@ import werkzeug.exceptions
 
 
 #TODO(pjm): this import is required to work-around template loading in listSimulations, see #1151
-if any(k in feature_config.cfg().sim_types for k in ('flash', 'rs4pi', 'radia', 'synergia', 'warppba', 'warpvnd')):
+if any(k in feature_config.cfg().sim_types for k in ('flash', 'rs4pi', 'radia', 'synergia', 'silas', 'warppba', 'warpvnd')):
     import h5py
 
 #: If google_tag_manager_id set, string to insert in landing pages for google analytics
@@ -156,6 +157,7 @@ def api_errorLogging():
 @api_perm.require_user
 def api_exportArchive(simulation_type, simulation_id, filename):
     req = http_request.parse_params(
+        template=True,
         filename=filename,
         id=simulation_id,
         type=simulation_type,
@@ -387,11 +389,12 @@ def api_pythonSource(simulation_type, simulation_id, model=None, title=None):
     req = http_request.parse_params(type=simulation_type, id=simulation_id, template=True)
     m = model and req.sim_data.parse_model(model)
     d = simulation_db.read_simulation_json(req.type, sid=req.id)
+    suffix = simulation_db.get_schema(simulation_type).constants.simulationSourceExtension
     return http_reply.gen_file_as_attachment(
         req.template.python_source_for_model(d, m),
         '{}.{}'.format(
             d.models.simulation.name + ('-' + title if title else ''),
-            'madx' if m == 'madx' else 'py',
+            'madx' if m == 'madx' else suffix,
         ),
     )
 
@@ -622,8 +625,6 @@ def init(uwsgi=None, use_reloader=False):
         template_folder=str(simulation_db.STATIC_FOLDER),
     )
     _app.config['PROPAGATE_EXCEPTIONS'] = True
-    if cfg.flask_secret_key:
-        _app.config['SECRET_KEY'] = cfg.flask_secret_key
     _app.sirepo_uwsgi = uwsgi
     _app.sirepo_use_reloader = use_reloader
     uri_router.init(_app, simulation_db)
@@ -709,15 +710,8 @@ def static_dir(dir_name):
     return str(simulation_db.STATIC_FOLDER.join(dir_name))
 
 
-def _cfg_flask_secret_key(value):
-    import base64
-
-    return base64.urlsafe_b64decode(value)
-
-
 cfg = pkconfig.init(
     enable_source_cache_key=(True, bool, 'enable source cache key, disable to allow local file edits in Chrome'),
     db_dir=pkconfig.ReplacedBy('sirepo.srdb.root'),
-    flask_secret_key=(None, _cfg_flask_secret_key, 'only necessary of auth.github configured'),
     google_tag_manager_id=(None, str, 'enable google analytics with this id'),
 )
