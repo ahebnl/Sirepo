@@ -974,6 +974,7 @@
         },
         "zonePlate": {
             "title": ["Element Name", "String", "Zone Plate"],
+            "energyAvg": ["Average Photon Energy [eV]", "Float", 0, "active if > 0, to be used for calculation corrections to zone radii"],
             "position": ["Position along Optical Path [m]", "Float"],
             "numberOfZones": ["Number of Zones", "Integer", 100],
             "outerRadius": ["Outer Zone Radius [mm]", "Float", 0.1],
@@ -2044,6 +2045,7 @@
                     "numberOfZones",
                     "outerRadius",
                     "thickness",
+                    "energyAvg",
                     [
                         ["Horizontal", [
                             "horizontalOffset"

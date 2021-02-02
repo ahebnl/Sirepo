@@ -329,6 +329,7 @@ v.op_{{ item.name }}_{{ nameMap.get(name, name) }}
                 _atLen2={{ field(item, 'complementaryAttenuationLength') }},
                 _x={{ field(item, 'horizontalOffset') }},
                 _y={{ field(item, 'verticalOffset') }},
+                _e={{ field(item, 'energyAvg') }},
             ))
             pp.append(v.op_{{ item.name }}_pp)
 {% endif %}
