@@ -59,7 +59,7 @@
     {{- fields(item, 's', ('heightProfileFile', 'orientation', 'apertureShape')) }}
     {{- fields(item, 'f', ('tangentialRadius', 'sagittalRadius', 'tangentialSize', 'sagittalSize', 'grazingAngle', 'horizontalPosition', 'verticalPosition', 'normalVectorX', 'normalVectorY', 'normalVectorZ', 'tangentialVectorX', 'tangentialVectorY', 'heightAmplification')) }}
 {% elif item.type == 'zonePlate' %}
-    {{- fields(item, 'f', ('outerRadius', 'thickness', 'mainRefractiveIndex', 'mainAttenuationLength', 'complementaryRefractiveIndex', 'complementaryAttenuationLength', 'horizontalOffset', 'verticalOffset')) }}
+    {{- fields(item, 'f', ('outerRadius', 'thickness', 'mainRefractiveIndex', 'mainAttenuationLength', 'complementaryRefractiveIndex', 'complementaryAttenuationLength', 'horizontalOffset', 'verticalOffset', 'energyAvg')) }}
     {{- fields(item, 'i', ('numberOfZones', )) }}
 {% endif %}
 {% endfor %}
