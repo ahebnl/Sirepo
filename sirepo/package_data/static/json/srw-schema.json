@@ -727,8 +727,8 @@
             "orientation": ["Orientation of Reflection Plane", "MirrorOrientation", "x"],
             "grazingAngle": ["Grazing Angle [mrad]", "Float", 3.1415926],
             "heightAmplification": ["Height Amplification Coefficient", "Float", 1],
-            "horizontalTransverseSize": ["Horizontal Transverse Size [mm]", "Float", 1],
-            "verticalTransverseSize": ["Vertical Transverse Size [mm]", "Float", 1]
+            "horizontalTransverseSize": ["Horizontal Aperture Size [mm]", "Float", 1],
+            "verticalTransverseSize": ["Vertical Aperture Size [mm]", "Float", 1]
         },
         "mirrorReport": {
             "intensityPlotsWidth": ["Maximum Plot Dimension [pixels]", "IntensityPlotsWidth", "0"],
